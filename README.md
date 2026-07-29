@@ -7,7 +7,8 @@
 - ⚡ **Vite** – lightning-fast bundler
 - ⚛️ **React 19.2 + TypeScript** – latest React features with the React Compiler
 - 🎨 **shadcn/ui** – atomic UI components
-- 🔁 **TanStack Query** – client-state & caching
+- 🗃️ **Redux Toolkit** – client-state (auth session, UI shell)
+- 🔁 **TanStack Query** – server-state caching & mutations
 - 🌐 **Axios** – centralized API handling
 - 🔐 **Feature-based routing**
 - 🧩 **Reusable UI & shared components**
@@ -135,6 +136,191 @@ cp .env.example .env.production
 
 ### 4. Build for Production
 `npm run build`
+
+## 🤖 MCP (Model Context Protocol)
+
+This project includes a pre-configured set of **MCP servers** to supercharge Claude Code's capabilities. When you open this project in **Claude Code Desktop** or the **VS Code extension**, these tools are automatically available.
+
+MCP servers are configured in [`.claude/settings.json`](./.claude/settings.json).
+
+### 🧰 Configured MCP Servers
+
+| MCP Server | Tool | Purpose |
+|---|---|---|
+| **filesystem** | `@modelcontextprotocol/server-filesystem` | Safe file access to the project directory |
+| **browser** | `@browsermcp/mcp` | Headless browser automation for testing & screenshots |
+| **playwright** | `@playwright/mcp` | Playwright-powered UI interaction & assertions |
+| **shadcn** | `shadcn-mcp` | Add, manage, and discover shadcn/ui components |
+| **context7** | `@upstash/context7-mcp` | Long-term context & memory across conversations |
+| **fetch** | `mcp-server-fetch-typescript` | Web fetching & API exploration |
+| **memory** | `@modelcontextprotocol/server-memory` | Persistent knowledge graph for the AI assistant |
+| **sequential-thinking** | `@modelcontextprotocol/server-sequential-thinking` | Structured multi-step reasoning |
+| **terminal** | `@nichoth/mcp-server-terminal` | Terminal command execution |
+
+> **Note:** The GitHub MCP server (`@modelcontextprotocol/server-github`) requires a `GITHUB_PERSONAL_ACCESS_TOKEN` environment variable. To enable it, set the token and add it to `.claude/settings.json`.
+
+### 🏛️ State Management — Clean Architecture
+
+This boilerplate enforces a **clean separation of concerns** between two state layers:
+
+| Layer | Tool | Responsibility |
+|---|---|---|
+| **Client State** | **Redux Toolkit** | Auth session, UI state (sidebar, theme, modals, toasts) |
+| **Server State** | **TanStack Query** | API data fetching, caching, revalidation, mutations |
+
+### Why Redux Toolkit + TanStack Query Together?
+
+- **Redux Toolkit** handles what lives on the client: the JWT token, the current user object, sidebar open/close, theme preference, toast queue. This state is synchronous, immediately available, and drives the app shell.
+- **TanStack Query** handles everything from the server: API GET/POST/PUT/DELETE, background refetching, optimistic updates, cache invalidation. It eliminates reducers for server data.
+- The two never overlap — you won't find API data in Redux or UI state in TanStack Query.
+
+### 📁 Store Structure
+
+```
+src/store/
+├── index.ts              # configureStore — combines all slices
+├── hooks.ts              # Typed useAppDispatch / useAppSelector
+├── slices/
+│   ├── authSlice.ts      # Auth credentials, user, hydration status
+│   └── uiSlice.ts        # Sidebar, theme, toasts, modal state
+├── hooks/
+│   └── useAuthHydration.ts  # Boot-time token restore from localStorage
+└── middleware/
+    └── authMiddleware.ts  # Dispatch clearCredentials on 401 from RTK async actions
+```
+
+### 🧩 Slices
+
+**authSlice** — JWT token + user info
+```typescript
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import {
+  setCredentials,
+  clearCredentials,
+  selectIsAuthenticated,
+  selectCurrentUser,
+} from "@/store/slices/authSlice";
+
+const dispatch = useAppDispatch();
+const isAuth = useAppSelector(selectIsAuthenticated);
+const user = useAppSelector(selectCurrentUser);
+
+// After successful login
+dispatch(setCredentials({ accessToken, user }));
+```
+
+**uiSlice** — UI shell state
+```typescript
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { toggleSidebar, setTheme, selectSidebarOpen } from "@/store/slices/uiSlice";
+
+const dispatch = useAppDispatch();
+const sidebarOpen = useAppSelector(selectSidebarOpen);
+
+dispatch(toggleSidebar());
+dispatch(setTheme("dark"));
+```
+
+### 🔐 Auth Flow — Redux + TanStack Query Handshake
+
+1. **Login API call** → handled by `usePostMutation` (TanStack Query)
+2. On success → persist token to `localStorage`, then dispatch `setCredentials({ accessToken, user })` to Redux
+3. Redux becomes the single source of truth for the token
+4. **Axios interceptor** reads the token from `store.getState()` for every request
+5. On **401 response** → `api-client.ts` dispatches `clearCredentials()` → all subscribers react instantly
+6. On **app boot** → `useAuthHydration` reads token from `localStorage`, dispatches `hydrate()` to restore session
+
+```typescript
+// Example: Login component
+import { usePostMutation } from "@/hooks/use-tanstack-query";
+import { useAppDispatch } from "@/store/hooks";
+import { setCredentials } from "@/store/slices/authSlice";
+import { setLocalStorage } from "@/utils/storage-utils";
+import { env } from "@/config/env";
+import type { LoginApiResponse } from "@/features/auth/types/api-types";
+
+const loginMutation = usePostMutation<LoginFormData, LoginApiResponse>(
+  "login",
+  "/auth/login",
+);
+
+const handleSubmit = async (data: LoginFormData) => {
+  const response = await loginMutation.mutateAsync(data);
+
+  // Persist token to localStorage for boot-time hydration
+  setLocalStorage(env.VITE_AUTH_TOKEN_SECRET, response.accessToken);
+
+  // Dispatch to Redux — single source of truth
+  dispatch(setCredentials({
+    accessToken: response.accessToken,
+    user: response.user,
+  }));
+};
+```
+
+### ✅ Best Practices
+
+1. **Typed hooks only** — always import `useAppDispatch` and `useAppSelector` from `@/store/hooks`, never the raw Redux hooks.
+2. **Server data stays in TanStack Query** — do not create Redux slices for API entities. Use TanStack Query's cache instead.
+3. **Selectors are colocated** — each slice file exports its own selectors alongside the reducer.
+4. **Slices are flat and small** — one concern per slice. Avoid deeply nested state.
+5. **RTK Query is intentionally excluded** — TanStack Query already handles server state; adding RTK Query would create two competing server-cache layers.
+
+## 🧩 UI Registries
+
+This project is configured with **third-party shadcn/ui registries** so you can install components from popular design ecosystems using the standard `shadcn add` workflow. Registries are defined in [`components.json`](./components.json).
+
+### 📦 Available Registries
+
+| Registry | URL | Description |
+|---|---|---|
+| `@originui` | [originui.com](https://originui.com) | Modern UI components & blocks |
+| `@magicui` | [magicui.design](https://magicui.design) | Animated & magic UI components |
+| `@motion-primitives` | [motion-primitives.com](https://motion-primitives.com) | Motion & animation primitives |
+| `@react-bits` | [reactbits.dev](https://reactbits.dev) | Text animations, particles, and more |
+| `@21st.dev` | [21st.dev](https://21st.dev) | Community-driven shadcn components |
+| `@reui` | [reui.io](https://reui.io) | Reusable UI component collection |
+| `@basecn` | [basecn.dev](https://basecn.dev) | Base components & templates |
+| `@formcn` | [formcn.dev](https://formcn.dev) | Form components & builders |
+| `@shadcnblocks` | [shadcnblocks.com](https://shadcnblocks.com) | Pre-built page blocks & sections |
+| `@tweakcn` | [tweakcn.com](https://tweakcn.com) | Themed component variants |
+
+### Usage
+
+Install a component from any registry just like a local shadcn component:
+
+```bash
+# From OriginUI
+npx shadcn add "@originui/button"
+
+# From MagicUI
+npx shadcn add "@magicui/magic-card"
+
+# From Motion Primitives
+npx shadcn add "@motion-primitives/accordion"
+
+# From shadcnblocks
+npx shadcn add "@shadcnblocks/hero-section"
+```
+
+> **Note:** Components are downloaded from the remote registry and placed in your `components/ui/` directory — no extra dependencies or build steps required.
+
+## 🔧 Adding a New MCP Server
+
+To add a custom MCP server, edit `.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "my-server": {
+      "command": "npx",
+      "args": ["-y", "my-mcp-server-package"]
+    }
+  }
+}
+```
+
+MCP servers run on `npx` start-up and require no manual installation.
 
 ## 🤝 Contributing
 Contributions are welcome. Please read the [CONTRIBUTING.md](./CONTRIBUTING.md) file before opening a pull request.

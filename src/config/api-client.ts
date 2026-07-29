@@ -1,6 +1,7 @@
 import { isAxiosError, type AxiosRequestConfig } from "axios";
 import axiosInstance from "./axios-instance";
-import { removeLocalStorageItem } from "@/utils/storage-utils";
+import { store } from "@/store";
+import { clearCredentials, setHydrated } from "@/store/slices/authSlice";
 
 const handleError = (error: unknown) => {
   if (isAxiosError(error)) {
@@ -8,8 +9,9 @@ const handleError = (error: unknown) => {
     const message = error.response?.data?.message;
 
     if (status === 401) {
-      removeLocalStorageItem("token");
-      window.location.href = "/auth/login";
+      // Dispatch to Redux so every subscriber knows instantly
+      store.dispatch(clearCredentials());
+      store.dispatch(setHydrated());
     }
 
     throw new Error(message || "Something went wrong");

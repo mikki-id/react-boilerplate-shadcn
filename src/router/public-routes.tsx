@@ -3,6 +3,7 @@ import { lazy } from "react";
 const Landing = lazy(() => import("@/pages/public/landing"));
 const AboutUs = lazy(() => import("@/pages/public/about-us"));
 const ContactUs = lazy(() => import("@/pages/public/contact-us"));
+const PageForbidden = lazy(() => import("@/pages/public/403"));
 
 export const PUBLIC_ROUTES = [
   {
@@ -16,5 +17,9 @@ export const PUBLIC_ROUTES = [
   {
     path: "contact-us",
     element: <ContactUs />,
+  },
+  {
+    path: "/403",
+    element: <PageForbidden />,
   },
 ];

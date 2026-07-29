@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { createBrowserRouter, Outlet, RouterProvider } from "react-router-dom";
+import { createBrowserRouter, Navigate, Outlet, RouterProvider } from "react-router-dom";
 import { PUBLIC_ROUTES } from "./public-routes";
 import { ADMIN_ROUTES } from "./admin-routes";
 import { AUTH_ROUTES } from "./auth-routes";
@@ -10,7 +10,13 @@ const MainRouter = () => {
     {
       path: "/",
       element: <Outlet />,
-      children: PUBLIC_ROUTES,
+      children: [
+        ...PUBLIC_ROUTES,
+        {
+          path: "/login",
+          element: <Navigate to="/auth/login" replace />,
+        },
+      ],
     },
     {
       path: "/auth",
@@ -19,7 +25,6 @@ const MainRouter = () => {
     },
     {
       path: "/admin",
-      element: <Outlet />,
       children: ADMIN_ROUTES,
     },
     {

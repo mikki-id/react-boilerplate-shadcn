@@ -62,8 +62,7 @@ const CommonRadarChart = <TData extends Record<string, unknown>>({
         ))}
         {legend && (
           <ChartLegend
-            content={<ChartLegendContent />}
-            className={legendClassName}
+            content={<ChartLegendContent className={legendClassName} />}
           />
         )}
       </RadarChart>
